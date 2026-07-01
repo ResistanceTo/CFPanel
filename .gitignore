@@ -4,8 +4,6 @@ xcuserdata
 .DS_Store
 .serena/
 
-AppIcon.icon
-
 # Local docs, scratch files, and release prep artifacts
 *text.md
 to_translate.json
