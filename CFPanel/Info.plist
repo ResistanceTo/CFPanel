@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>org.zhaohe.CFPanel.oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>cfpanel</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFPANEL_CLOUDFLARE_OAUTH_CLIENT_ID</key>
+	<string>d53602c818cb6d952cd1d7807e4bf7a4</string>
+	<key>CFPANEL_CLOUDFLARE_OAUTH_REDIRECT_URI</key>
+	<string>https://cfpanel.zhaohe.org/oauth/callback</string>
+	<key>NSAppTransportSecurity</key>
+	<dict/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>CFPanel uses device authentication to confirm dangerous Cloudflare asset operations.</string>
+</dict>
+</plist>

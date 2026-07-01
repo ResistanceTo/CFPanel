@@ -1,0 +1,28 @@
+xcuserdata
+*.xcuserstate
+*.xcscmblueprint
+.DS_Store
+.serena/
+
+AppIcon.icon
+
+# Local docs, scratch files, and release prep artifacts
+*text.md
+to_translate.json
+
+# Local build or secret configuration
+.env
+.env.*
+*.xcconfig
+!*.example.xcconfig
+
+# Certificates, keys, and provisioning profiles
+*.p8
+*.p12
+*.cer
+*.key
+*.pem
+*.mobileprovision
+
+# Ignore all JSON files
+*.json
