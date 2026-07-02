@@ -21,6 +21,3 @@ to_translate.json
 *.key
 *.pem
 *.mobileprovision
-
-# Ignore all JSON files
-*.json
