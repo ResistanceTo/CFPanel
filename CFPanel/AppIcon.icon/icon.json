@@ -1,0 +1,40 @@
+{
+  "fill" : "automatic",
+  "groups" : [
+    {
+      "blend-mode" : "normal",
+      "blur-material" : 0.3,
+      "layers" : [
+        {
+          "fill" : "none",
+          "glass" : true,
+          "image-name" : "CFPanel2.png",
+          "name" : "CFPanel2",
+          "opacity" : 0.8
+        },
+        {
+          "fill" : "none",
+          "image-name" : "CFPanel1.png",
+          "name" : "CFPanel1",
+          "opacity" : 0.8
+        }
+      ],
+      "lighting" : "individual",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.4
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
