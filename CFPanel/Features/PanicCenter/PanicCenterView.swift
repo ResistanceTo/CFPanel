@@ -124,18 +124,18 @@ struct PanicCenterView: View {
         let zoneName = securityLevelViewModel.selectedZone?.name ?? "the active site"
         if pendingUnderAttackMode == true {
             return DangerousOperationMessage.liveChange(
-                resource: "Security level",
+                resource: "Under Attack Mode",
                 name: zoneName,
-                from: String(localized: securityLevelViewModel.currentSecurityLevel.title),
-                to: String(localized: SecurityLevel.underAttack.title),
+                from: String(localized: "Disabled"),
+                to: String(localized: "Enabled"),
                 impact: "Cloudflare will immediately apply stronger visitor challenges. Real users may see additional checks."
             )
         }
         return DangerousOperationMessage.liveChange(
-            resource: "Security level",
+            resource: "Under Attack Mode",
             name: zoneName,
-            from: String(localized: SecurityLevel.underAttack.title),
-            to: String(localized: securityLevelViewModel.lastNonAttackSecurityLevel.title),
+            from: String(localized: "Enabled"),
+            to: String(localized: "Disabled"),
             impact: "Cloudflare will restore the previous security posture immediately."
         )
     }

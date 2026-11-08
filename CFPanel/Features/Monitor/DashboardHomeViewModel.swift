@@ -47,8 +47,8 @@ final class DashboardHomeViewModel {
         context.openSitesTab()
     }
 
-    func presentError(_ error: some Error) {
-        context.presentError(error)
+    func presentLoadError(_ error: some Error) {
+        context.presentLoadError(error)
     }
 
     func isDashboardLoaded(for zoneID: String, range: DashboardTimeRange) -> Bool {

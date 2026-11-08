@@ -20,12 +20,12 @@ struct RootView: View {
             }
         }
         .onChange(of: authenticationViewModel.isSignedIn) {
-            appModel.suppressInterruptingErrorAlerts = authenticationViewModel.isSignedIn
+            appModel.suppressLoadErrorAlerts = authenticationViewModel.isSignedIn
         }
         .task {
             guard hasBootstrapped == false else { return }
             hasBootstrapped = true
-            appModel.suppressInterruptingErrorAlerts = false
+            appModel.suppressLoadErrorAlerts = false
             await authenticationViewModel.bootstrap(
                 preferredZoneID: pinnedZoneID,
                 fallbackTokenMode: .account,

@@ -107,6 +107,10 @@ final class ZoneSettingsContext {
         shellActions.presentError(error)
     }
 
+    func presentLoadError(_ error: some Error) {
+        shellActions.presentLoadError(error)
+    }
+
     func presentNotice(_ message: String) {
         shellActions.presentNotice(message)
     }

@@ -86,33 +86,19 @@ final class SecurityLevelViewModel {
             context.currentSecurityLevel = resolved
             emitUnderAttackFeedback(enabled: isUnderAttackModeEnabled)
             context.presentNotice(DangerousOperationMessage.changeNotice(
-                resource: "Security level",
-                from: String(localized: previousLevel.title),
-                to: String(localized: resolved.title)
+                resource: "Under Attack Mode",
+                from: underAttackStateTitle(previousLevel),
+                to: underAttackStateTitle(resolved)
             ))
         } catch {
             context.presentError(error)
         }
     }
 
-    func updateSecurityLevel(_ level: SecurityLevel) async {
-        guard let zoneID = selectedZoneID, level != .underAttack else { return }
-        let previousLevel = currentSecurityLevel
-
-        do {
-            let resolved = try await context.withZoneControlsRefresh {
-                try await context.api.updateSecurityLevel(zoneID: zoneID, level: level)
-            }
-            context.currentSecurityLevel = resolved
-            context.lastNonAttackSecurityLevel = resolved
-            context.presentNotice(DangerousOperationMessage.changeNotice(
-                resource: "Security level",
-                from: String(localized: previousLevel.title),
-                to: String(localized: resolved.title)
-            ))
-        } catch {
-            context.presentError(error)
-        }
+    // Since 2026-04-16 Cloudflare's security level only switches Under Attack Mode on or off;
+    // Low/Medium/High no longer change behavior, so the app only exposes the on/off state.
+    private func underAttackStateTitle(_ level: SecurityLevel) -> String {
+        level == .underAttack ? String(localized: "Enabled") : String(localized: "Disabled")
     }
 
     private func emitUnderAttackFeedback(enabled: Bool) {

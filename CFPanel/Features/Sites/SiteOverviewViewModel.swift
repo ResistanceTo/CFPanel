@@ -22,8 +22,8 @@ final class SiteOverviewViewModel {
         context.isLoaded(.zoneOverview, for: zoneID)
     }
 
-    func presentError(_ error: some Error) {
-        context.presentError(error)
+    func presentLoadError(_ error: some Error) {
+        context.presentLoadError(error)
     }
 
     func refreshZoneOverview(force: Bool = false) async throws {

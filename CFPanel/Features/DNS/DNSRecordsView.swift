@@ -90,7 +90,7 @@ struct DNSRecordsView: View {
             do {
                 try await dnsRecordsViewModel.refresh()
             } catch {
-                dnsRecordsViewModel.presentError(error)
+                dnsRecordsViewModel.presentLoadError(error)
             }
         }
         .searchable(text: $dnsRecordsViewModel.searchText, prompt: "Search records")
@@ -98,7 +98,7 @@ struct DNSRecordsView: View {
             do {
                 try await dnsRecordsViewModel.refresh()
             } catch {
-                dnsRecordsViewModel.presentError(error)
+                dnsRecordsViewModel.presentLoadError(error)
             }
         }
         .toolbar {

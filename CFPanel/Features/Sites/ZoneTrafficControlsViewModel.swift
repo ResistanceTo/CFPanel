@@ -19,8 +19,8 @@ final class ZoneTrafficControlsViewModel {
         context.isLoaded(.trafficControls, for: zoneID)
     }
 
-    func presentError(_ error: some Error) {
-        context.presentError(error)
+    func presentLoadError(_ error: some Error) {
+        context.presentLoadError(error)
     }
 
     func refreshTrafficZoneControls(force: Bool = false) async throws {

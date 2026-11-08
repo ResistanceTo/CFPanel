@@ -119,7 +119,7 @@ struct DashboardView: View {
         do {
             try await dashboardHomeViewModel.refreshHome(range: selectedRange, force: force)
         } catch {
-            dashboardHomeViewModel.presentError(error)
+            dashboardHomeViewModel.presentLoadError(error)
         }
     }
 
@@ -222,14 +222,14 @@ private struct DashboardAnalyticsDetailView: View {
             do {
                 try await dashboardHomeViewModel.refresh(range: selectedRange)
             } catch {
-                dashboardHomeViewModel.presentError(error)
+                dashboardHomeViewModel.presentLoadError(error)
             }
         }
         .refreshable {
             do {
                 try await dashboardHomeViewModel.refresh(range: selectedRange)
             } catch {
-                dashboardHomeViewModel.presentError(error)
+                dashboardHomeViewModel.presentLoadError(error)
             }
         }
     }
@@ -496,14 +496,14 @@ private struct DashboardPerformanceDetailView: View {
             do {
                 try await dashboardHomeViewModel.refresh(range: selectedRange)
             } catch {
-                dashboardHomeViewModel.presentError(error)
+                dashboardHomeViewModel.presentLoadError(error)
             }
         }
         .refreshable {
             do {
                 try await dashboardHomeViewModel.refresh(range: selectedRange)
             } catch {
-                dashboardHomeViewModel.presentError(error)
+                dashboardHomeViewModel.presentLoadError(error)
             }
         }
     }

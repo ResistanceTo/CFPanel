@@ -22,14 +22,14 @@ struct SiteOverviewView: View {
             do {
                 try await siteOverviewViewModel.refreshZoneOverview()
             } catch {
-                siteOverviewViewModel.presentError(error)
+                siteOverviewViewModel.presentLoadError(error)
             }
         }
         .refreshable {
             do {
                 try await siteOverviewViewModel.refreshZoneOverview(force: true)
             } catch {
-                siteOverviewViewModel.presentError(error)
+                siteOverviewViewModel.presentLoadError(error)
             }
         }
     }
@@ -92,14 +92,14 @@ struct SiteDNSSettingsView: View {
             do {
                 try await siteDNSSettingsViewModel.refreshDNSSettings()
             } catch {
-                siteDNSSettingsViewModel.presentError(error)
+                siteDNSSettingsViewModel.presentLoadError(error)
             }
         }
         .refreshable {
             do {
                 try await siteDNSSettingsViewModel.refreshDNSSettings(force: true)
             } catch {
-                siteDNSSettingsViewModel.presentError(error)
+                siteDNSSettingsViewModel.presentLoadError(error)
             }
         }
     }
@@ -232,14 +232,14 @@ struct SiteSSLTLSView: View {
                 do {
                     try await siteTLSViewModel.refreshTLSPageData()
                 } catch {
-                    siteTLSViewModel.presentError(error)
+                    siteTLSViewModel.presentLoadError(error)
                 }
             }
             if siteTLSViewModel.isHSTSLoaded(for: zoneID) == false {
                 do {
                     try await siteTLSViewModel.refreshHSTSSettings()
                 } catch {
-                    siteTLSViewModel.presentError(error)
+                    siteTLSViewModel.presentLoadError(error)
                 }
             }
         }
@@ -247,12 +247,12 @@ struct SiteSSLTLSView: View {
             do {
                 try await siteTLSViewModel.refreshTLSPageData(force: true)
             } catch {
-                siteTLSViewModel.presentError(error)
+                siteTLSViewModel.presentLoadError(error)
             }
             do {
                 try await siteTLSViewModel.refreshHSTSSettings(force: true)
             } catch {
-                siteTLSViewModel.presentError(error)
+                siteTLSViewModel.presentLoadError(error)
             }
         }
     }
@@ -323,14 +323,14 @@ struct SiteCachingView: View {
             do {
                 try await siteCachingViewModel.refreshCachingPageData()
             } catch {
-                siteCachingViewModel.presentError(error)
+                siteCachingViewModel.presentLoadError(error)
             }
         }
         .refreshable {
             do {
                 try await siteCachingViewModel.refreshCachingPageData(force: true)
             } catch {
-                siteCachingViewModel.presentError(error)
+                siteCachingViewModel.presentLoadError(error)
             }
         }
     }

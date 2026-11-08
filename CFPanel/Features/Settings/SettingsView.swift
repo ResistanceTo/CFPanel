@@ -409,14 +409,14 @@ struct ZoneTrafficControlsSettingsView: View {
             do {
                 try await zoneTrafficControlsViewModel.refreshTrafficZoneControls()
             } catch {
-                zoneTrafficControlsViewModel.presentError(error)
+                zoneTrafficControlsViewModel.presentLoadError(error)
             }
         }
         .refreshable {
             do {
                 try await zoneTrafficControlsViewModel.refreshTrafficZoneControls(force: true)
             } catch {
-                zoneTrafficControlsViewModel.presentError(error)
+                zoneTrafficControlsViewModel.presentLoadError(error)
             }
         }
     }
@@ -469,14 +469,14 @@ struct ZoneSecurityControlsSettingsView: View {
             do {
                 try await zoneSecurityControlsViewModel.refreshSecurityZoneControls()
             } catch {
-                zoneSecurityControlsViewModel.presentError(error)
+                zoneSecurityControlsViewModel.presentLoadError(error)
             }
         }
         .refreshable {
             do {
                 try await zoneSecurityControlsViewModel.refreshSecurityZoneControls(force: true)
             } catch {
-                zoneSecurityControlsViewModel.presentError(error)
+                zoneSecurityControlsViewModel.presentLoadError(error)
             }
         }
     }
@@ -596,14 +596,14 @@ struct ZoneEdgeFeaturesView: View {
             do {
                 try await zoneEdgeFeaturesViewModel.refreshZoneAdvancedSettings()
             } catch {
-                zoneEdgeFeaturesViewModel.presentError(error)
+                zoneEdgeFeaturesViewModel.presentLoadError(error)
             }
         }
         .refreshable {
             do {
                 try await zoneEdgeFeaturesViewModel.refreshZoneAdvancedSettings(force: true)
             } catch {
-                zoneEdgeFeaturesViewModel.presentError(error)
+                zoneEdgeFeaturesViewModel.presentLoadError(error)
             }
         }
     }

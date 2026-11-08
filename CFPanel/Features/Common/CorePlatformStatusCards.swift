@@ -56,7 +56,7 @@ struct PagesStatusCard: View {
                     StatusPill(title: "Attention", value: attentionCount.formatted())
                 }
 
-                ForEach(projects.prefix(3)) { project in
+                ForEach(projects) { project in
                     NavigationLink(value: PagesProjectRoute(projectID: project.id, destination: .detail)) {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .top, spacing: 12) {
@@ -139,7 +139,7 @@ struct WorkersStatusCard: View {
                     StatusPill(title: "Detached", value: detachedCount.formatted())
                 }
 
-                ForEach(runtimes.prefix(3)) { runtime in
+                ForEach(runtimes) { runtime in
                     NavigationLink(value: WorkerRuntimeRoute(scriptID: runtime.id, destination: .detail)) {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .top, spacing: 12) {

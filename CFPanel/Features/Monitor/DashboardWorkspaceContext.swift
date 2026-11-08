@@ -72,6 +72,10 @@ final class DashboardWorkspaceContext {
         shellActions.presentError(error)
     }
 
+    func presentLoadError(_ error: some Error) {
+        shellActions.presentLoadError(error)
+    }
+
     func isDashboardLoaded(for zoneID: String, range: DashboardTimeRange) -> Bool {
         loadStateStore.isDashboardLoaded(for: zoneID, range: range)
     }

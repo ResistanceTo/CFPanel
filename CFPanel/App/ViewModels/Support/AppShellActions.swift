@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 struct AppShellActions {
     let presentError: (Error) -> Void
+    let presentLoadError: (Error) -> Void
     let presentErrorMessage: (String) -> Void
     let presentNotice: (String) -> Void
     let selectTab: (AppTab) -> Void
@@ -14,6 +15,9 @@ struct AppShellActions {
         AppShellActions(
             presentError: { [weak appModel] error in
                 appModel?.presentError(error)
+            },
+            presentLoadError: { [weak appModel] error in
+                appModel?.presentLoadError(error)
             },
             presentErrorMessage: { [weak appModel] message in
                 appModel?.presentError(message)
