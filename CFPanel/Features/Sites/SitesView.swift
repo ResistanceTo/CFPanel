@@ -316,7 +316,7 @@ extension SitesRoute: CaseIterable, Identifiable {
         case .dnsRecords:
             "Records, imports, and scan review for the active site."
         case .dnsSettings:
-            "Zone mode, CNAME flattening, Foundation DNS, and nameserver TTL."
+            "Zone mode, CNAME flattening, and nameserver TTL."
         case .sslTLS:
             "Encryption mode, minimum TLS version, and HTTPS-related controls."
         case .caching:

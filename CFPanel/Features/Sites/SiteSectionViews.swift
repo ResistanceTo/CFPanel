@@ -75,7 +75,9 @@ struct SiteDNSSettingsView: View {
                     LabeledContent("Zone Mode", value: String(localized: zoneDNSSettings.zoneMode.title))
                     LabeledContent("Flatten All CNAMEs", value: zoneDNSSettings.flattenAllCNAMES ? "Enabled" : "Disabled")
                     LabeledContent("Multi-provider DNS", value: zoneDNSSettings.multiProvider ? "Enabled" : "Disabled")
-                    LabeledContent("Foundation DNS", value: zoneDNSSettings.foundationDNS ? "Enabled" : "Disabled")
+                    if let foundationDNS = zoneDNSSettings.foundationDNS {
+                        LabeledContent("Foundation DNS", value: foundationDNS ? "Enabled" : "Disabled")
+                    }
                     LabeledContent("Nameserver TTL", value: zoneDNSSettings.nsTTL.formatted())
                 } else {
                     Text("No DNS settings loaded for the selected zone.")

@@ -230,10 +230,21 @@ struct DNSRecordEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Type", selection: $draft.type) {
-                    ForEach(SupportedDNSRecordType.allCases) { type in
-                        Text(type.title).tag(type)
+                if draft.recordID == nil {
+                    Picker("Type", selection: $draft.type) {
+                        ForEach(SupportedDNSRecordType.allCases) { type in
+                            Text(type.title).tag(type)
+                        }
                     }
+                } else {
+                    // Cloudflare no longer accepts type changes on existing records (since 2026-06-30).
+                    LabeledContent("Type") {
+                        Text(draft.type.title)
+                    }
+
+                    Text("To change the type, delete this record and create a new one.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 TextField("Name", text: $draft.name)

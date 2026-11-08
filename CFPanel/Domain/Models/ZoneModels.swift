@@ -104,7 +104,8 @@ nonisolated struct ZoneDNSSettings: Codable, Sendable {
 
     let flattenAllCNAMES: Bool
     let multiProvider: Bool
-    let foundationDNS: Bool
+    // Cloudflare stops returning `foundation_dns` from DNS settings on 2026-11-23.
+    let foundationDNS: Bool?
     let nsTTL: Int
     let zoneMode: ZoneMode
     let nameservers: NameServers?

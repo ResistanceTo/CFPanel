@@ -38716,6 +38716,58 @@
         }
       }
     },
+    "To change the type, delete this record and create a new one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um den Typ zu ändern, löschen Sie diesen Eintrag und erstellen Sie einen neuen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para cambiar el tipo, elimine este registro y cree uno nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour modifier le type, supprimez cet enregistrement puis créez-en un nouveau."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per cambiare il tipo, elimina questo record e creane uno nuovo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイプを変更するには、このレコードを削除して新しく作成してください。"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para mudar o tipo, exclua este registro e crie um novo."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Чтобы изменить тип, удалите эту запись и создайте новую."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如需更改类型，请删除此记录后新建一条。"
+          }
+        }
+      }
+    },
     "Toggle Under Attack Mode or purge cache for the active site.": {
       "localizations": {
         "de": {
@@ -43150,54 +43202,54 @@
         }
       }
     },
-    "Zone mode, CNAME flattening, Foundation DNS, and nameserver TTL.": {
+    "Zone mode, CNAME flattening, and nameserver TTL.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zonenmodus, CNAME-Flattening, Foundation DNS und Nameserver-TTL."
+            "value": "Zonenmodus, CNAME-Flattening und Nameserver-TTL."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Modo de zona, aplanamiento de CNAME, Foundation DNS y TTL del servidor de nombres."
+            "value": "Modo de zona, aplanamiento de CNAME y TTL del servidor de nombres."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mode de zone, aplatissement CNAME, Foundation DNS et TTL du serveur de noms."
+            "value": "Mode de zone, aplatissement CNAME et TTL du serveur de noms."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Modalità zona, flattening CNAME, Foundation DNS e TTL del nameserver."
+            "value": "Modalità zona, flattening CNAME e TTL del nameserver."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ゾーンモード、CNAMEフラット化、Foundation DNS、およびネームサーバーのTTL。"
+            "value": "ゾーンモード、CNAMEフラット化、およびネームサーバーのTTL。"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Modo da zona, nivelamento de CNAME, Foundation DNS e TTL do servidor de nomes."
+            "value": "Modo da zona, nivelamento de CNAME e TTL do servidor de nomes."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Режим зоны, выравнивание CNAME, Foundation DNS и TTL серверов имен."
+            "value": "Режим зоны, выравнивание CNAME и TTL серверов имен."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "区域模式、CNAME 扁平化、Foundation DNS 和名称服务器 TTL。"
+            "value": "区域模式、CNAME 扁平化和名称服务器 TTL。"
           }
         }
       }
