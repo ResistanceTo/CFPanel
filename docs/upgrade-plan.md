@@ -1,394 +1,456 @@
 # CFPanel 升级方案（2.0）
 
-> 2026-11-08 整理。依据：代码盘点、模拟器实测、App Store 用户反馈、Cloudflare 最新 API 与废弃公告、iOS 26/27 设计规范与 SDK。
+> 2026-11-08 第二版。在第一版基础上，对照两份官方资料重新整理：
+> - **Cloudflare API 文档**（developers.cloudflare.com/api）：抓取了 128 个产品分组中与手机运维相关的 63 个，共 1,227 个接口，逐条和 CFPanel 现有调用比对。
+> - **Cloudflare 网页版 Dashboard**：依据官方文档仓库里的 Dashboard 路由表（163 个页面）、产品文档里的操作路径、2025–2026 年 changelog 和截图整理。没有登录实际账号查看。
+>
 > 标注 ⚠️ 的条目尚未完全核实，动手前需要再确认。
 
 ## 0. 结论
 
-把 CFPanel 从「按 Cloudflare 产品目录排列的一组设置页」，升级成「手机上的 Cloudflare 值班台」：
-
-- **看一眼**：打开 app 几秒内就知道所有站点和服务有没有出问题。
-- **出事时**：从打开到执行应急操作不超过 2 次点击（加必要的确认）。
-- **日常操作**：改 DNS、看部署、查资源顺手，安全确认统一、可预期。
-
-分 6 步推进：先修 bug（1.1.1），再打地基（1.2），然后换导航、交互和视觉（2.0），最后补运维能力（2.1）、接入新产品（2.2）、做系统集成（2.3）。
+1. **结构上向 Dashboard 看齐**。用户已经熟悉 Dashboard 的分组和叫法，CFPanel 沿用同样的心智模型：账号层（首页、域名、构建、防护与连接、账号管理）+ 域名层（概览、DNS、SSL/TLS、安全、缓存……）。iPad 侧边栏基本照搬 Dashboard，iPhone 压缩成 4 个 tab 加搜索。
+2. **交互上抄 Dashboard 做得好的，改掉不适合手机的**。可以照搬的有：域名概览的「快捷操作」、星标和最近访问、快速搜索、安全概览的待办列表、DNS 记录页的新交互（含官方自己的手机卡片布局）、告警静音。需要改的是：Dashboard 用单个开关切换的高风险操作，手机上要加确认，防止误触。
+3. **功能上补「出事时用得上」的接口**。CFPanel 目前只覆盖了相关接口的约 10%。优先补应急工具箱：IP 封禁、Zone Hold、软清除缓存、账号级「仅 DNS」开关、证书状态、吊销 Token、告警。然后补开发者平台：Worker 日志、实时日志、回滚、构建、Workflows、Tunnel。
+4. **长尾功能用「在 Dashboard 中打开」兜底**。Dashboard 每个页面都有深链接（`dash.cloudflare.com/?to=/:account/:zone/...`），app 不需要把 128 个产品全做一遍。
 
 ---
 
-## 1. 现状诊断
+## 1. 现状
 
-### 1.1 做得好的地方（升级时保留）
+### 1.1 1.1.1 已经处理的问题（分支 `fix/cloudflare-api-compat`，未合并）
 
-- 设备直连 Cloudflare 的信任模型：OAuth 用了 PKCE 和 state 校验，凭证存在 Keychain。
-- 状态分层清楚：`AppStores` + 各功能 context，有会话版本号防止旧响应覆盖新数据。
-- 覆盖面广：14 个功能区，8 种语言。
-- 用 Xcode 27.1 编译零警告。
+| 问题 | 状态 |
+|---|---|
+| `foundation_dns` 字段 11 月 23 日下线导致 DNS 设置页打不开 | 已修复 |
+| 编辑 DNS 记录时还能改类型（Cloudflare 6 月 30 日起不支持） | 已锁定类型 |
+| 登录后所有请求错误都不提示 | 已修复：用户操作失败一律提示，自动加载仍然静默 |
+| Pages / Workers 只能进前 3 个 | 已修复 |
+| 安全级别 Low/Medium/High 选择器失效 | 已移除，只保留 Under Attack 开关 |
+| 审计日志被 app 自己的读取（`view`）刷屏 | 已过滤 |
 
-### 1.2 Bug 和已经失效的功能（建议放进 1.1.1）
+1.1.1 还没做的：暂停站点加确认、深色模式登录页、改版本号、**确认 OAuth 客户端已公开**（Cloudflare 2026-06-03 起新建的 OAuth 客户端默认私有，不公开的话其他用户无法用 OAuth 登录）。
 
-| 问题 | 证据 | 影响 |
-|---|---|---|
-| 登录后所有请求错误都不提示 | `RootView.swift:23` 登录后把 `suppressInterruptingErrorAlerts` 设为 `true`，`AppModel.swift:49` 之后只写日志 | 开关 Under Attack、清缓存、保存 DNS 失败时用户完全不知道 |
-| Pages / Workers 只能进前 3 个 | `CorePlatformStatusCards.swift:59,142` 写死 `prefix(3)`，没有其他入口 | 第 4 个之后的项目无法查看和操作 |
-| 深色模式下登录页看不清 | 登录页背景是硬编码的浅色渐变，文字随系统变白（模拟器实测） | 深色模式用户第一屏就是浅底白字 |
-| 暂停站点没有确认 | `SiteSectionViews.swift:49-60` | 误触会让全部流量绕过 Cloudflare |
-| 安全级别选择器已经没有意义 | Cloudflare 2026-04-16 更新：安全级别只用来开关 Under Attack，威胁分数恒为 0 | 选 Low/Medium/High 不再有效果，会误导用户 |
-| 审计日志会被 app 自己的读取刷屏 | Cloudflare 2026-10-13 起，审计日志 v2 把 GET 请求记为 `view` 操作，API 会返回这些记录 | CFPanel 每次刷新都会在审计日志里留下一串 `view`，真正的改动被淹没 |
+### 1.2 接口覆盖情况
 
-### 1.3 功能边界
+| | 数量 |
+|---|---|
+| API 文档中的产品分组 | 128 |
+| 其中与手机运维相关的分组（本次分析范围） | 63 |
+| 这 63 个分组的接口总数 | 1,227 |
+| CFPanel 调用的接口 | 89 个路径，涉及 14 个分组，约覆盖 130 个接口（约 10%） |
 
-- **站点相关的操作被拆散在多处**：
-  - 安全设置一部分在「安全」tab，一部分在「站点 → 高级设置 → 安全控制」。
-  - Always Use HTTPS 在 SSL/TLS 和「高级 → 流量控制」各有一份。
-  - 开发模式和 Always Online 在「缓存」和「流量控制」各有一份。
-  - 应急中心在「监控」和「安全」各有一个入口。
-- **切换站点不方便**：切换入口藏在「站点」tab 里，另外还有「所有站点」列表和设置里的「默认站点」，一共 3 个地方；站点多时没有搜索。
-- **只支持一个账号**：
-  - Keychain 里只有一个凭证。
-  - OAuth 登录默认取账号列表里的第一个。
-  - 站点列表可能来自多个账号，但平台功能只用一个账号 ID，可能对不上。
-  - 想切换账号只能退出重登。
-- **很多功能只能看不能改**：
-  - DNS 设置、Worker 部署和版本（不能回滚，Pages 却可以）、邮件路由规则。
-  - R2 / D1 / Queues / Vectorize / Hyperdrive 只有元数据。
-  - 规则不能新建或编辑（`addZoneRule` 写了但没有调用）。
-  - 没有 WAF 事件、IP 访问规则、Worker 日志。
+覆盖较多的是 Workers、Pages、DNS、Email Routing、KV；完全没有覆盖的包括告警、IP 访问规则、Rules Lists、SSL 证书、Security Center、成员与 Token 管理、Tunnel、Workflows、Workers 构建、Registrar、Web Analytics、Bot 管理等。完整对照见附录 A。
 
-### 1.4 交互
+**接口健康检查**
+- ⚠️ Email Sending 用的路径 `/zones/{id}/email/security/sending_subdomains` 已经不在当前 API 文档里，文档里的是 `/zones/{id}/email/sending/subdomains`。实测旧路径还能路由（返回需要认证，不存在的路径会返回 "No route"），所以目前没坏，但应该在 1.2 迁移。
+- Workers 新增了一套以 Worker 为主体的接口（`/accounts/{id}/workers/workers`），和现在用的 `workers/scripts` 并存。⚠️ 需要确认是否会取代旧接口。
 
-常用操作的路径（iPhone）：
+### 1.3 体验上的主要问题（第一版诊断，仍然成立）
 
-| 操作 | 现在 | 目标 |
-|---|---|---|
-| 编辑 DNS 记录 | 5 次点击，中间一个 sheet 关闭后再弹另一个 | 3 次 |
-| 开启 Under Attack | 3 次点击 + 等 3 秒 + 确认 | 2 次 + 确认 |
-| 清除全部缓存 | 4 次 + 等 3 秒 + 确认 + Face ID | 2 次 + 确认（Face ID 可选） |
-| 查看 Worker 部署 | 4 次，而且只限前 3 个 Worker | 3 次，带搜索 |
-| 读取 KV 值 | 5 层，没有搜索 | 4 层，支持前缀搜索 |
-| 切换账号 | 不支持 | 2 次 |
-
-其他问题：
-- 安全确认不一致：Under Attack 只有倒计时；清缓存要倒计时加 Face ID；暂停站点、SSL 模式、HSTS、WAF 开关点一下就立即生效。
-- 成功提示是模态的「Done」弹窗（30 处），每次都要多点一下。
-- 只有 DNS 有搜索；只有 DNS 和规则支持左滑；没有长按菜单、复制、分享、撤销；触感反馈只在 Under Attack 一处。
-
-### 1.5 视觉
-
-- 两套风格并存：一部分是系统 `Form`/`List`，另一部分是 `ScrollView` 加 31 处手写卡片（圆角 24、不透明背景）。
-- 118 处脚注说明文字，很多是写给开发者的，比如 "This page is a directory only…"。
-- 深色模式下卡片和页面背景都是黑色，看不出层次。
-- 无障碍标签只有 5 处；登录页用了固定字号。
-- 还在用旧的 `.tabItem` 写法。**用 iOS 27 SDK 编译时已经无法关闭 Liquid Glass**（`UIDesignRequiresCompatibility` 被忽略），所以下一个版本无论如何都会换上新外观，手写卡片和不透明背景会和它冲突。
-
-### 1.6 工程
-
-- 没有测试 target，没有 CI。
-- 41 个 view model 在 `CFPanelApp.swift` 里逐个用 `.environment` 注入，漏掉一个就会运行时崩溃。
-- 路由枚举是各 tab 私有的，Pages/Worker 的页面只注册在「平台」tab 的导航栈里，很难做深链和跨 tab 跳转。
-- 有一批死代码（`DashboardHomeSections.swift`、`AccountPlatformStatusCards.swift`、`ProductSurfaceStyle` 等）。
-- 文档和代码不一致：
-  - 文档写 `@CloudStorage`/iCloud KVS，代码用的是 `@AppStorage`。
-  - dev.md 承诺的 user token 和请求日志都不可用。
-  - `.github/copilot-instructions.md` 还在描述旧架构。
-
-### 1.7 用户反馈与权限
-
-- App Store 唯一一条评价（中国区）提了两点：**希望支持 Cloudflare Tunnel**；**希望给出「app 功能 → 所需 Token 权限」清单**。
-- ⚠️ **最需要先确认的一项**：Cloudflare 从 2026-06-03 起，新建的 OAuth 客户端默认是私有的，只有所属账号的成员能授权。要公开，需要填写名称、logo、网址，并在域名上加一条 `cloudflare_oauth_client_publisher=` 开头的 TXT 记录完成验证，公开后不可撤回。CFPanel 的 OAuth 是 2026-07 随 1.1.0 上线的，如果客户端没有公开，其他用户都无法用 OAuth 登录。请到 Cloudflare 后台确认客户端的可见性。
-- ⚠️ OAuth 没有申请 `offline_access`。Cloudflare 的 OAuth 服务可能因此不发 refresh token，访问令牌过期后需要重新登录。验证方法：登录后看请求日志里的 `refreshTokenPresent`。
-- ⚠️ Hyperdrive 在 OAuth 权限目录（`OAuthScopeCatalog.swift`）里没有对应 scope，OAuth 用户可能用不了。需要用 `GET /client/v4/oauth/scopes`（要带凭证）核对。
+- 功能入口分散：同一个开关出现在两处；安全设置一半在「安全」tab，一半在「站点 → 高级设置」；应急中心有两个入口。
+- 只支持一个账号，切换账号要退出重登。
+- 很多功能只能看不能改：DNS 设置、Worker 部署（不能回滚）、邮件路由规则、R2/D1/Queues 只有元数据、规则不能新建。
+- 交互：常用操作路径长；成功提示是模态弹窗；只有 DNS 有搜索；没有长按菜单、复制、撤销。
+- 视觉：系统列表和 31 处手写卡片两套风格并存；118 处写给开发者的说明文字；深色模式层次消失；无障碍标签只有 5 处。用 iOS 27 SDK 编译已无法关闭 Liquid Glass。
+- 工程：没有测试和 CI；41 个 view model 逐个注入；路由绑死在各 tab，难做深链。
+- App Store 唯一的用户反馈：希望支持 Tunnel；希望有「功能 → 所需权限」清单。
 
 ---
 
-## 2. 目标与原则
+## 2. 官方 Dashboard 现在长什么样
 
-**原则**
-
-1. 继续纯客户端、无后端；不做依赖推送服务器的功能。
-2. 按作用范围组织功能：站点范围的放进站点，账号范围的放进平台，不再按「安全」「设置」这种横切分类拆散。
-3. 一个功能只有一个入口。
-4. 导航层交给系统控件和 Liquid Glass，不再手绘外框。
-5. 权限按需申请，缺权限时界面直接告诉用户缺哪一项、怎么补。
-
-**不做的事**
-
-- 完整替代 Cloudflare Dashboard。
-- 计费、套餐管理。
-- 复杂的规则表达式编辑器。
-- 需要服务器的推送告警。
-
----
-
-## 3. 信息架构（新导航）
-
-### 3.1 Tab 结构
-
-使用 iOS 18+ 的 `Tab` API，iPad 上用 `.sidebarAdaptable`。
-
-| Tab | 内容 | 对应旧版 |
-|---|---|---|
-| **概览** | 所有站点的健康状态（请求、5xx、威胁的迷你趋势图）、正在生效的应急状态、最近触发的告警、最近部署、最近审计事件 | 监控 |
-| **站点** | 站点列表（搜索、按账号分组）→ 站点主页 | 站点 + 安全 + 部分高级设置 |
-| **平台** | Workers、Pages、存储与数据库、新产品（见第 6 节） | 平台 |
-| **搜索** | `Tab(role: .search)`：跨站点、DNS 记录、Workers、Pages、存储资源统一搜索和跳转 | 新增 |
-
-- **账号与设置**：移到右上角头像按钮，点开是账号切换和设置 sheet，不再占一个 tab。
-- **应急入口**：
-  - 站点主页顶部固定一个「应急」区块：Under Attack、清除缓存、暂停站点。
-  - 概览页的站点卡片支持长按直接操作。
-  - 有应急状态生效时（Under Attack 开着、开发模式开着），用 `tabViewBottomAccessory` 常驻提示，例如「example.com：Under Attack 已开启 2 小时 · 关闭」，避免忘记关。
-  - iOS 27 可选用 `Tab(role: .prominent)` 固定一个应急 tab（需要 `#available`）。
-
-### 3.2 站点主页
+### 2.1 账号层导航（2026 年）
 
 ```
-站点主页（example.com）
-├─ 应急：Under Attack · 清除缓存 · 暂停站点
-├─ 流量：24H / 7D / 30D 图表（现在所有套餐都能查 30 天）、状态码、缓存命中、国家
-├─ DNS：记录（列表上直接切换代理）、DNS 设置、扫描、区域文件
-├─ 安全：Under Attack、WAF/安全事件、IP 访问规则、Bot、规则、安全洞察
-├─ 缓存：清除 / 软清除、缓存级别、浏览器 TTL、开发模式、Always Online
-├─ SSL/TLS：加密模式、最低 TLS、HTTPS 相关、HSTS
-├─ 邮件：路由、发送
-└─ 站点设置：概况、边缘功能、暂停/恢复
+账号切换器 · 快速搜索（⌘K 或 /）· + Add · Ask AI · Support · 用户菜单
+─────────────────────────────
+Account home
+Recents（最近访问，可固定页面）
+Observability：Logs · Analytics · Alerts（原 Notifications）· 导出  ⚠️ 2026-10 推断
+Domains
+── Build ──
+  Compute：Workers & Pages、Workers for Platforms、Containers、Durable Objects、
+           Queues、Workflows、Browser Run、VPC、Email Service（Routing / Sending）
+  AI：Workers AI、AI Gateway、Vectorize、AI Search
+  Storage & databases：R2、Workers KV、D1、Hyperdrive、Analytics Engine、Pipelines、Secrets Store
+  Media：Stream、Images、Realtime
+── Protect & Connect ──
+  Application security：Security insights、Security analytics、Security events、WAF、Turnstile……
+  Zero Trust（2026-10 起并入主导航）
+  Networking：Tunnels、Mesh、Insights、Routes、Firewall policies、L3/4 DDoS、DNS Firewall……
+  Delivery & performance：Bulk redirects、Load Balancing、Web tag management
+  Domain registration：Manage / Transfer / Register domains
+──
+Manage account：Members、Billing、Account API tokens、OAuth clients、Audit logs、
+                Abuse reports、Configurations（Lists、Custom Pages、DNS Settings……）
 ```
 
-每个设置只出现一次。旧版「高级设置」里的流量、安全、边缘开关按含义并入上面各组。
+2025–2026 年的主要变化：Compute 和 AI 拆成两组；Queues 移到 Compute；Security Center、WAF、Turnstile 合并为 Application security；Notifications 改名 Alerts；Tunnels 移到 Networking；Zero Trust 并入主导航；Magic WAN 等改名 Cloudflare WAN。
 
-### 3.3 平台
+### 2.2 域名层导航
 
-- **Workers**：完整列表（搜索、排序、状态）→ 详情：最近错误与日志（新）、构建（新）、部署与版本（含回滚）、路由与域名、配置。
-- **Pages**：完整列表 → 部署（重试/回滚）、域名、操作。Cloudflare 建议新项目用 Workers，Pages 维持现有能力即可。
-- **Workflows**（新）：实例列表、状态、暂停/恢复/终止。
-- **存储与数据库**：KV / R2 / D1 / Queues / Vectorize / Hyperdrive 合并成一个分组列表，少一层目录。
-- **网络**（新）：Tunnel 状态与连接。
-- **账号**：告警（历史与静音）、审计日志、API Token、域名注册（beta）。
+```
+← Back to Domains · 域名切换器 · ☆ 星标 · 套餐标签
+Overview
+AI Crawl Control
+Analytics & logs：HTTP Traffic、Security、Performance、Web analytics、Workers、Instant Logs……
+Version Management
+DNS：Records、Analytics、Settings
+Email：Email Routing、DMARC Management、Email Security
+SSL/TLS：Overview、Edge Certificates、Client Certificates、Origin Server、Custom Hostnames
+Security：Overview、Analytics、Web assets、Security rules、Settings
+Speed：Observatory、Real user monitoring……
+Caching：Overview、Configuration、Cache Rules、Tiered Cache、Cache Reserve
+Workers Routes
+Rules：Overview、Snippets、Cloud Connector、Trace、Page Rules（已弃用）
+Error Pages · Network
+Traffic：Load Balancing、Health Checks、Waiting Room……
+```
 
-### 3.4 账号模型
+菜单项按套餐显示，Free 套餐的列表短很多。
 
-1. **一个凭证下的多个账号**：账号选择器；站点按账号分组；平台功能跟随当前账号。修掉「站点来自 A 账号、平台用 B 账号」的错配。
-2. **多凭证**（例如公司和个人）：Keychain 每个配置一条记录，切换不用退出。
-3. 记住上次使用的站点。
+### 2.3 值得参考的页面和交互
 
----
-
-## 4. 交互升级
-
-### 4.1 统一的操作分级
-
-| 级别 | 例子 | 交互 |
+| 页面 / 模式 | Dashboard 的做法 | CFPanel 怎么用 |
 |---|---|---|
-| 只读 | 查看任何数据 | 无 |
-| 可撤销的即时改动 | 切换代理、开发模式、启用/停用规则、改缓存 TTL | 直接生效，底部提示条带「撤销」（约 5 秒），配合触感反馈 |
-| 影响线上流量 | Under Attack、暂停站点、清除全部缓存、改 SSL 模式、回滚部署 | 从按钮处弹出确认框（`confirmationDialog(item:)`，可向下兼容到 iOS 15），写清影响范围；不再强制等 3 秒 |
-| 不可逆删除 | 删 DNS 记录、删项目、删 KV | Face ID + 确认；继续放在「高级危险模式」后面 |
+| 域名列表 | 搜索、按星标筛选（最多 10 个，筛选会被记住）；每行显示状态、安全洞察数、访客迷你图、套餐、⋯ 快捷操作 | 首页和域名列表照此设计 |
+| 域名概览 | 右侧「Quick Actions」：Under Attack 开关、Zone Hold 开关；「Advanced Actions」：暂停 Cloudflare、移出 Cloudflare；名称服务器和「重新检查激活」；Zone ID / Account ID 带复制按钮 | 做成应急主屏 |
+| 安全概览 | 「安全待办」按严重程度（Critical / Moderate / Low）排序，可按类型和类别筛选；归档时要选原因（误报 / 接受风险 / 其他）；「检测工具 5/6 运行中」；流量拆成「已拦截 / Cloudflare 响应 / 源站响应」 | 安全 tab 的落地页 |
+| Security rules | 自定义规则、限速规则、托管规则例外合并到一页，有模板 | 规则只做查看、开关和模板，不做表达式编辑器 |
+| DNS 记录 | 推荐项（如「添加 DMARC 记录」）、搜索、筛选、代理状态（橙色云 / 灰色云）、多选后批量改代理或删除（删除要输入 `DELETE`）、影子记录和配额告警；**官方为手机做了卡片布局** | 直接参考官方手机布局 |
+| Worker 详情 | Overview（24 小时请求 / 错误 / CPU、部署、域名）· Metrics（图上标出每次发布）· Deployments · Observability · Settings | 手机上保留 4 个：概览、部署、日志、指标，其余放「更多」 |
+| R2 桶 | 存储类别、公开访问、大小、A/B 类操作数；Objects · Metrics · Settings | 桶详情照此 |
+| Alerts | 告警历史、通知策略、静音（Mute 1h / 12h / 24h / 自定义） | 首页显示告警，一键静音 |
+| 快速搜索 | ⌘K 或 `/`，能搜页面，也能执行命令（如「复制账号 ID」） | 搜索 tab：页面 + 资源 + 命令 |
+| 键盘快捷键 | `g h` 首页、`g w` Workers、`s z` 切换域名、`s .` 星标、`p .` 固定页面 | iPad 外接键盘照搬 |
+| 高风险操作 | Under Attack、开发模式、Zone Hold 是单个开关；清除全部缓存弹警告；批量删除要输入 `DELETE`；暂停放在「Advanced Actions」里；2026-09 新增「软清除」 | 见 5.1 |
+| 深链接 | `dash.cloudflare.com/?to=/:account/:zone/<路径>` 自动替换成当前账号和域名 | 每个页面提供「在 Dashboard 中打开」 |
+| AI 助手 | Agent Lee（原 Cloudy），每次写操作都要用户批准，没有公开 API | 不集成；以后做 AI 功能时沿用「写操作需批准」的原则 |
 
-3 秒倒计时改成设置项，默认关闭。
-
-### 4.2 反馈
-
-- 成功：用不打断操作的提示条，取代 30 处模态「Done」弹窗。
-- 失败：一律可见。页面内显示错误条和重试按钮；如果是权限不足，直接说明缺哪个权限、怎么添加。
-- 修掉登录后错误被吞掉的 bug（1.1.1）。
-
-### 4.3 列表和详情
-
-- 所有目录型列表都支持搜索、排序和加载更多。
-- 左滑操作和长按菜单：复制值、复制 ID、在浏览器打开 Dashboard 对应页面、分享。
-- 详情用 push，编辑用 sheet（取消/保存用系统按钮角色），不再一个 sheet 关掉再弹另一个。
-- DNS：在列表里直接点云朵图标切换代理，长按复制。
-- KV：按前缀搜索。
-- 审计日志：分页，按操作者和资源筛选。
-
-### 4.4 iPad 与大屏
-
-- `.sidebarAdaptable` + `NavigationSplitView`（站点列表 → 站点主页 → 详情）。一套导航状态，尺寸变化时不丢失位置。
-- 键盘快捷键和 iPadOS 菜单栏命令：⌘F 搜索、⌘R 刷新、⌘K 快速跳转。
-- 用 iOS 27 SDK 编译后，iPhone app 在 iPad 上会自动可调整大小，不能再假设固定宽度。
+⚠️ 未核实：2026-10 之后账号侧边栏的确切结构；Account home 现在显示什么；域名概览快捷操作是否包含开发模式；星标、固定、最近访问是否有公开 API（目前按「没有」处理，存在本地并通过 iCloud 同步）。
 
 ---
 
-## 5. 视觉升级
+## 3. 原则
 
-- **采用 Liquid Glass**：tab bar、工具栏、sheet 交给系统；删掉页面上的不透明背景和自绘的底栏。
-- **内容层只留两种样式**：设置类页面统一用 `List`/`Form`；仪表盘类（概览、流量）用一个统一的卡片组件（同心圆角 `ConcentricRectangle`），删掉 31 处手写卡片。
-- **颜色**：AccentColor 目前是空的，需要定一个品牌主色和一组状态色（正常/警告/故障），只在表达含义时用色。
-- **深色模式**：修好登录页；卡片层次用系统语义色。
-- **文案**：删掉写给开发者的说明，每页最多一句提示。文案定稿后统一做一次 8 种语言的翻译。
-- **图表**：Swift Charts 迷你趋势图放进站点列表行和概览卡片；保留选中交互；补上无障碍音频图表。
-- **无障碍**：全量检查动态字体，图标按钮加标签，去掉固定字号。
-- **登录页重做**：
-  - 品牌头部 + 主按钮「使用 Cloudflare 登录」+ 次按钮「使用 API Token」。
-  - 利用 OAuth 可选 scope：只有站点读取是必需的，其余由用户在 Cloudflare 授权页自行勾选，app 里不再需要一整面权限开关墙。
-  - 新增「功能 → 所需权限」清单，回应 App Store 上的反馈；app 内遇到权限不足时也跳到这份清单。
+1. 继续纯客户端、无后端，不做依赖推送服务器的功能。
+2. **分组和命名跟 Dashboard 一致**：Records、Proxied / DNS only、Security rules、Web assets、Alerts、Workers & Pages、Account API tokens……中文翻译尽量对齐 Dashboard 官方中文界面的用词（⚠️ 需要逐个对照）。
+3. **手机端优先应急**：Dashboard 是「什么都能配」，CFPanel 是「出事时最快处理」，所以快捷操作、告警、日志排在前面，复杂配置留给网页。
+4. 一个功能只有一个主入口（Under Attack 例外：Dashboard 本身就在概览和安全设置两处都放了）。
+5. 导航层交给系统控件和 Liquid Glass，不再手绘外框。
+6. 权限按需申请，缺权限时直接说明缺哪一项，并给出 Cloudflare 403 响应里附带的文档链接。
+
+**不做**：完整替代 Dashboard、计费管理、规则表达式编辑器、Zero Trust 策略配置、需要服务器的推送。
 
 ---
 
-## 6. Cloudflare 新 API
+## 4. 信息架构
 
-所有新功能开工前都要先用 `GET /client/v4/oauth/scopes` 查到对应的 OAuth scope ID（这次调研在公开文档里一个也没找到），没有 scope 的功能只能在 Token 登录模式下提供。
+### 4.1 iPhone：4 个 tab + 搜索
 
-### 6.1 先处理：已有功能受到的变化
+| Tab | 对应 Dashboard | 内容 |
+|---|---|---|
+| **首页** | Account home + Alerts + Recents | 星标域名（状态、访客迷你图、安全待办数）；正在生效的应急状态（Under Attack、开发模式剩余时间、Zone Hold）；最近告警（可静音）；最近访问 |
+| **域名** | Domains → 域名层 | 域名列表（搜索、星标、按状态/套餐/标签筛选）→ 域名主页（见 4.3） |
+| **构建** | Build | Compute（Workers & Pages、Workflows、Queues、Durable Objects、Containers）· Storage & databases（R2、KV、D1、Hyperdrive、Secrets Store）· AI（AI Gateway、Vectorize）· Media（跳转网页） |
+| **防护与连接** | Protect & Connect | 账号级安全洞察、Turnstile；Tunnels；Load Balancing；域名注册 |
+| **搜索** | 快速搜索（⌘K） | `Tab(role: .search)`：页面、资源（域名、DNS 记录、Worker、桶……）、命令（「对 example.com 开启 Under Attack」「复制 Zone ID」「清除某个 URL」） |
 
-| 变化 | 时间 | 对 CFPanel 的影响 | 处理 | 版本 |
-|---|---|---|---|---|
-| 安全级别只剩 Under Attack 开关，威胁分数恒为 0 | 2026-04-16 | Low/Medium/High 选择器失效 | 去掉选择器，只保留 Under Attack 开关 | 1.1.1 |
-| 审计日志 v2 记录 `view`（GET）操作 | 2026-10-13 | app 自己的读取刷屏 | 默认隐藏 `view` 操作，提供开关 | 1.1.1 |
-| 所有套餐的分析数据保留 31 天，单次查询最长 30 天 | 2026-10-02 | Free/Pro 用户的 30D 视图原来可能受限 | 30D 范围对所有套餐开放 | 1.2 |
-| 任何清除缓存都会让 Cache Reserve 失效 | 2026-09-28 | 清除缓存的代价变大 | 在确认框里说明，并提供「软清除」（见 6.2） | 2.1 |
-| 403 错误会附带 `documentation_url` | 2026-08-20 | 可以精确告诉用户缺什么权限 | 权限不足提示里带上这个链接 | 2.0 |
-| 响应带 `Ratelimit` / `Retry-After` 头；每个 token 每 5 分钟 1200 次 | 2026-08 | 一次刷新并发请求较多 | 传输层按响应头退避重试 | 1.2 |
-| 权限显示名从「Edit」改为「Write」 | 2026 | 权限清单的文字 | 按权限组 ID 匹配，不按名字 | 2.0 |
-| D1 查询结果超过 50 MB 会失败 | 2026-11-04 | 只有做 D1 查询控制台才相关 | 查询加 LIMIT | 视情况 |
+- **右上角头像** = Dashboard 的用户菜单 + Manage account：账号切换、成员、Account API tokens、审计日志、告警策略、账单用量、Configurations（Lists）、OAuth 授权管理，以及 app 自身设置。
+- **有应急状态生效时**，用 `tabViewBottomAccessory` 常驻提示，例如「example.com：Under Attack 已开启 2 小时 · 关闭」。
 
-### 6.2 新增功能（按「手机端价值 × 纯客户端可行性」排序）
+### 4.2 iPad：侧边栏照搬 Dashboard
 
-| # | 功能 | 接口 | 状态 | 为什么值得做 | 规模 | 版本 |
-|---|---|---|---|---|---|---|
-| 1 | **软清除缓存** | `POST /zones/{id}/invalidate_cache`，选择器同清除（URL、标签、主机名、前缀、全部） | GA，2026-09-28 | 比清除更安全：源站故障时还能返回旧内容。直接放进现有清除流程。要求源站返回 `ETag` 或 `Last-Modified` | 小 | 2.1 |
-| 2 | **账号级「仅 DNS」紧急开关** | `PATCH /accounts/{id}/dns_settings`，`enforce_dns_only: true` | GA，2026-04-28 | **Dashboard 上没有，只能通过 API 操作**，是 CFPanel 的差异化功能。会暴露所有站点的源站 IP，并关闭 WAF、DDoS 防护和缓存，必须做最重的确认 | 小到中 | 2.1 |
-| 3 | **Tunnel 状态** | `GET /accounts/{id}/cfd_tunnel`、`/cfd_tunnel/{id}/connections` | GA | App Store 用户点名要的功能；「隧道断了没」是典型的值班场景。列表里的 `connections` 字段 2026-10-05 起已移除，要单独查连接 | 中 | 2.2 |
-| 4 | **告警中心** | Alerting v3：`/alerting/v3/history`、`/silences`（增删改查）、`/policies` | 已有 | 不需要推送也能看「刚才触发了什么」；事故期间一键静音 2 小时 | 中 | 2.2 |
-| 5 | **Worker 最近错误和日志** | `POST /accounts/{id}/workers/observability/telemetry/query`（events/invocations 视图） | GA | 出事时最想看的就是报错。⚠️ 文档里只写了需要「Workers Observability Write」权限，需要实测 | 中 | 2.2 |
-| 6 | **Workers 构建** | `GET /accounts/{id}/builds/workers/{tag}/builds`、`/builds/{uuid}/logs`、`PUT …/cancel` | GA | 「部署失败了吗、为什么」。⚠️ 文档说只接受用户级 API Token，CFPanel 目前只支持账号 Token 和 OAuth | 中 | 2.2 |
-| 7 | **Workflows 实例** | `/accounts/{id}/workflows/{name}/instances`、`PATCH …/instances/{id}/status`（暂停、恢复、终止、重启） | GA | 找卡住或失败的实例并处理 | 中 | 2.2 |
-| 8 | **安全洞察** | `GET /zones/{id}/security-center/insights`、`PUT …/{issue}/dismiss` | 已有 | 悬空 DNS、缺 DMARC、管理员没开 MFA 等问题一览，只读、低风险 | 小 | 2.1 |
-| 9 | **数据服务补强** | Queues `GET /queues/{id}/metrics`（积压数、最旧消息时间）；D1 `undelete`（7 天内）和时间点恢复；R2 `GET /r2/buckets/{b}/objects` 浏览对象 | GA | 「消费者是不是卡住了」「误删的库能不能找回」「不用 S3 密钥看桶里有什么」 | 中 | 2.1 |
-| 10 | **审计日志资源历史** | `GET /accounts/{id}/logs/audit/{id}/history` | GA，2026-07-27 | 「这条记录是谁、什么时候改的」 | 小 | 2.1 |
-| 11 | **域名注册** | `GET /accounts/{id}/registrar/registrations`、`PATCH …/{domain}`（自动续费、锁定） | Beta，**还没有续费接口** | 到期提醒、自动续费和锁定状态；旧的注册商接口 2026-09-27 已下线 | 小 | 2.2 |
-| 12 | **SQL 分析接口** | `POST /client/v4/analytics/sql` | Beta，2026-10-02 | 一个接口查 HTTP、安全事件、Workers 日志；用的是 CFPanel 已申请的 `account-analytics.read`。先保留 GraphQL，等它 GA 再迁移 | 中 | 观察 |
-| 13 | **紧急轮换** | 账号 Token `PUT /accounts/{id}/tokens/{id}/value`；Workers 批量 secrets（2026-06-03） | GA | 凭证泄露时在手机上立即轮换 | 小到中 | 2.2 |
+`.sidebarAdaptable` 让 iPad 显示侧边栏，结构和 2.1 节基本一致（首页、Recents、Domains、Build、Protect & Connect、Manage account），进入域名后侧边栏换成域名层菜单，顶部有「← 返回域名」。iPhone 的 4 个 tab 就是这套侧边栏的压缩版，两者用同一套路由，尺寸变化时不丢位置。
 
-**先不做**：Containers、Secrets Store、AI Gateway 日志、AI Search、Logpush、发送测试邮件、账单用量（alpha）、自定义告警 Monitors（还没有 API）。
+### 4.3 域名主页（顺序沿用 Dashboard 域名层，只显示该套餐有的项）
 
-### 6.3 OAuth 相关的新能力
+```
+example.com   ☆   Pro   [在 Dashboard 中打开]
+├─ 概览：状态、名称服务器（待激活时可「重新检查」）、套餐、Zone ID / Account ID 复制
+│        快捷操作：Under Attack · 开发模式（显示剩余时间）· Zone Hold
+│        高级操作：暂停 Cloudflare
+├─ 分析与日志：HTTP 流量、安全、性能、Web Analytics
+├─ DNS：Records、Settings（含 DNSSEC）
+├─ 邮件：Email Routing、Email Sending、DMARC
+├─ SSL/TLS：概览（加密模式）、Edge Certificates（证书状态与到期时间、HTTPS、HSTS、最低 TLS）
+├─ 安全：Overview（安全待办）、Analytics、Security rules、Settings（Bot、泄露凭证检测）
+├─ AI 爬虫管控
+├─ 缓存：Overview（清除 / 软清除）、Configuration（缓存级别、浏览器 TTL、开发模式）、Cache Rules
+├─ Workers 路由
+├─ 规则：Overview（按执行顺序列出所有规则）
+└─ 流量：Load Balancing、Health Checks、Waiting Room（有才显示）
+```
 
-- **可选 scope**（2026-08-20）：`optional_scopes` 是 `scopes` 的子集，用户可以在授权页拒绝其中一部分。CFPanel 可以只把站点读取设为必需，其余设为可选，登录页的「权限墙」就能大幅简化（见第 5 节登录页重做）。
-- **客户端默认私有**（2026-06-03）：见 1.7，需要先确认。
-- **授权码 + PKCE（S256）是原生 app 唯一支持的方式**，CFPanel 已符合。
-- 账号管理员可以关闭「Public OAuth App access」，这种账号不会出现在授权结果里。要处理这种情况，并给出改用 Token 的提示。
+和现在相比：「安全」tab 并入域名主页；「站点 → 高级设置」里的开关按含义归到 SSL/TLS、缓存、安全；同一个开关只出现一次。
+
+### 4.4 账号模型
+
+1. 一个凭证下的多个账号：账号切换器（`GET /memberships`、`GET /organizations`）；域名按账号分组；构建、防护与连接跟随当前账号。
+2. 多凭证（例如公司和个人），Keychain 每个配置一条。
+3. 星标、最近访问、固定页面存为非敏感偏好，通过 iCloud KVS 同步。
 
 ---
 
-## 7. 系统集成（在无后端前提下）
+## 5. 交互
 
-两个限制：
-- 小组件推送、控件推送、Live Activity 远程更新都需要服务器，所以不做远程推送。
-- 扩展（小组件、控制中心控件）要调用 Cloudflare，就得和主 app 共享 Keychain，属于安全敏感改动，必须做成用户自己开启。
+### 5.1 高风险操作的确认分级
+
+Dashboard 的分级思路可以沿用，但手机误触更容易，所以整体比网页重一级：
+
+| 级别 | 例子 | Dashboard | CFPanel |
+|---|---|---|---|
+| 可撤销的小改动 | 切换单条记录代理、开关一条规则、改缓存 TTL | 直接生效 | 直接生效 + 底部提示条带「撤销」 + 触感反馈 |
+| 影响线上流量 | Under Attack、开发模式、Zone Hold、改 SSL 模式、回滚 Worker | 单个开关 | 从按钮弹出确认框，写清影响范围；不再强制等 3 秒（改为可选设置） |
+| 大范围影响 | 清除全部缓存、暂停 Cloudflare、账号级「仅 DNS」 | 警告弹窗 / 放在高级操作里 / 只有 API | 确认框 + Face ID；清除前先推荐「软清除」；「仅 DNS」放在高级危险模式后面，写明会暴露所有站点的源站 IP |
+| 不可逆删除 | 删除记录、删除项目、吊销 Token | 删除确认；批量删除要输入 `DELETE` | Face ID + 确认；批量删除同样要求输入 `DELETE` |
+
+自动失效的状态显示倒计时：开发模式 3 小时后自动关闭，Zone Hold 可以设到期时间。
+
+### 5.2 反馈
+
+- 成功：底部提示条，不再用模态「Done」弹窗。
+- 失败：一律可见。页面内错误条 + 重试；权限不足时说明缺哪个权限，附上 403 响应里的文档链接，并跳转到「功能 → 所需权限」清单。
+
+### 5.3 列表和详情
+
+- 目录型列表都有搜索、排序、加载更多；支持左滑和长按菜单（复制值、复制 ID、在 Dashboard 中打开、分享）。
+- 详情页用 Dashboard 的 tab 结构，手机上用顶部分段控件，最多 4 段，其余放「更多」。
+- 编辑用 sheet（系统的取消 / 保存按钮），不再一个 sheet 关掉再弹另一个。
+- 所有 ID 旁边都有复制按钮。
+
+### 5.4 DNS 记录页（参考官方新版）
+
+- 顶部推荐项（如「缺少 DMARC 记录」）。
+- 搜索 + 筛选；列表卡片显示名称、类型、内容、代理状态（可直接点云朵切换）、TTL、备注。
+- 多选后批量改代理状态或删除（`POST /zones/{id}/dns_records/batch`，删除要输入 `DELETE`）。
+- 记录配额告警（`GET /zones/{id}/dns_records/usage`）和影子记录提示（列表请求加 `include_shadow_metadata=true`）。
+- **重新支持改类型**：用批量接口在一个事务里「删除旧记录 + 新建记录」，界面上说明会生成新的记录 ID。
+
+### 5.5 搜索
+
+对应 Dashboard 的快速搜索：
+- **页面**：域名主页各项、构建下各产品、账号管理各项。
+- **资源**：已加载的域名、DNS 记录、Worker、Pages 项目、桶、命名空间。
+- **命令**：开启 / 关闭 Under Attack、清除某个 URL、复制 Zone ID、在 Dashboard 中打开当前页。
+
+### 5.6 iPad 与键盘
+
+照搬 Dashboard 快捷键：`/` 搜索、`g h` 首页、`g w` Workers、`s z` 切换域名、`s .` 星标、`p .` 固定当前页；同时放进 iPadOS 菜单栏。
+
+---
+
+## 6. 视觉
+
+- **Liquid Glass**：tab bar、侧边栏、工具栏、sheet 交给系统；删掉页面上的不透明背景和自绘底栏。
+- **三种页面模板，对应 Dashboard 的三类页面**：
+  1. **概览页**（域名概览、Worker 概览、安全概览）：顶部数字条 + 快捷操作 + 待办 / 下一步。
+  2. **列表页**（域名、DNS 记录、Worker、规则）：系统 `List` + 搜索 + 筛选 + 多选。
+  3. **设置页**（SSL/TLS、缓存配置）：系统 `Form`。
+  删掉 31 处手写卡片，概览页的数字卡统一用一个组件（同心圆角）。
+- **状态语义和 Dashboard 一致**：代理状态用橙色云 / 灰色云；严重程度用 Critical / Moderate / Low 三色；部署状态用成功 / 进行中 / 失败。
+- **品牌色**：AccentColor 目前为空，需要定一个主色；状态色只用于表达含义。
+- **图表**：指标和 Dashboard 保持一致（请求、带宽、访客、威胁、「已拦截 / Cloudflare 响应 / 源站响应」）；Worker 指标图上标出每次发布；所有套餐都开放 30 天范围。
+- **深色模式**：修好登录页；层次用系统语义色。
+- **文案**：删掉写给开发者的说明，每页最多一句提示；文案定稿后统一做 8 种语言翻译，中文对齐 Dashboard 官方中文用词。
+- **无障碍**：动态字体全量检查，图标按钮加标签。
+- **登录页**：品牌头 + 「使用 Cloudflare 登录」主按钮 + 「使用 API Token」次按钮；利用 OAuth 可选 scope（只有站点读取是必需的），去掉 app 内的权限开关墙；附「功能 → 所需权限」清单。
+
+---
+
+## 7. 功能补充（按 Dashboard 分组，标注对应接口）
+
+### 7.1 P0：应急工具箱（2.1）
+
+| 功能 | Dashboard 位置 | 接口 | 说明 |
+|---|---|---|---|
+| Zone Hold | 域名概览 · 快捷操作 | `GET/POST/PATCH/DELETE /zones/{id}/hold` | 防止域名被误加到别的账号；解除时可设时长 |
+| 重新检查激活 | 域名概览 · 名称服务器 | `PUT /zones/{id}/activation_check` | 新域名待激活时常用 |
+| 软清除缓存 | 缓存 · 概览 | `POST /zones/{id}/invalidate_cache` | 2026-09 新增；源站故障时仍可返回旧内容；要求源站返回 ETag 或 Last-Modified |
+| IP 访问规则 | Security rules | `/{accounts\|zones}/{id}/firewall/access_rules/rules` | 按 IP、IP 段、ASN、国家封禁 / 质询 / 放行，最典型的应急操作 |
+| IP 列表 | Manage account · Configurations · Lists | `/accounts/{id}/rules/lists`、`…/items` | 把 IP 加进规则引用的列表，一处修改多条规则生效 |
+| 账号级「仅 DNS」开关 | Dashboard 没有，只有 API | `PATCH /accounts/{id}/dns_settings`（`enforce_dns_only`） | 差异化功能；影响账号下全部站点 |
+| 告警 | Observability · Alerts | `/accounts/{id}/alerting/v3/history`、`/policies`、`/silences` | 首页展示最近告警；一键静音 1 / 12 / 24 小时；策略开关 |
+| 安全待办 | Security · Overview | `/{accounts\|zones}/{id}/security-center/insights`、`…/dismiss`、`…/classification`、`…/severity` | 按严重程度排序；归档时选原因 |
+| 证书状态 | SSL/TLS · Edge Certificates | `GET /zones/{id}/ssl/certificate_packs`、`PATCH …/{pack}`（重新验证）、`GET /zones/{id}/ssl/universal/settings` | 到期提醒、验证失败时重试 |
+| DNSSEC | DNS · Settings | `GET/PATCH/DELETE /zones/{id}/dnssec` | 查看和开关；关闭前提示先删注册商处的 DS 记录 |
+| DNS 批量与配额 | DNS · Records | `POST /zones/{id}/dns_records/batch`、`GET …/dns_records/usage` | 见 5.4 |
+| 成员 | Manage account · Members | `/accounts/{id}/members` | 安全事件时移除成员 |
+| Account API tokens | Manage account | `/accounts/{id}/tokens`、`PUT …/{token}/value`（轮换）、`DELETE` | Token 泄露时立即轮换或吊销 |
+
+### 7.2 P1：开发者平台（2.2）
+
+| 功能 | Dashboard 位置 | 接口 | 说明 |
+|---|---|---|---|
+| Worker 日志 | Worker · Observability | `POST /accounts/{id}/workers/observability/telemetry/query` | 最近错误、按结果筛选。⚠️ 文档里只写了需要 Observability Write 权限 |
+| Worker 实时日志 | Worker · Logs | `POST /accounts/{id}/workers/scripts/{name}/tails`（返回 WebSocket 地址） | 手机上看实时日志，出事时很有用；离开页面时删除 tail |
+| 检测到的问题 | Worker · Issues | `GET /accounts/{id}/workers/observability/issues` | Dashboard 新增的问题视图 |
+| Worker 回滚 | Worker · Deployments | `POST /accounts/{id}/workers/scripts/{name}/deployments` | 选一个旧版本设为 100%；支持回滚最近 100 个版本 |
+| Secrets | Worker · Settings | `GET/PUT/DELETE …/scripts/{name}/secrets`、`PATCH …/secrets-bulk` | 泄露时轮换 |
+| Workers 构建 | Worker · Deployments | `/accounts/{id}/builds/builds/latest`、`…/{uuid}/logs`、`PUT …/cancel` | ⚠️ 文档说只接受用户级 API Token，需要先支持用户级 Token |
+| Workflows | Compute · Workflows | `/accounts/{id}/workflows`、`…/instances`、`PATCH …/instances/{id}/status` | 找卡住或失败的实例，暂停 / 恢复 / 终止 / 重启 |
+| Tunnels | Networking · Tunnels | `GET /accounts/{id}/cfd_tunnel`、`…/{id}/connections` | 用户点名要的功能；列表的 `connections` 字段已移除，要单独查 |
+| Queues | Compute · Queues | `GET …/queues/{id}/metrics`、`POST …/messages/peek` | 积压数、最旧消息时间；窥视消息排查问题 |
+| D1 | Storage · D1 | `POST …/d1/database/{id}/query`、`…/time_travel/restore`、`…/undelete` | 默认只读查询；时间点恢复和 7 天内恢复删除要最重确认；结果超过 50 MB 会失败 |
+| R2 对象 | Storage · R2 · Objects | `GET …/r2/buckets/{b}/objects`、`GET/DELETE …/objects/{key}` | 不用 S3 密钥浏览和删除对象 |
+| 域名注册 | Domain registration | `GET /accounts/{id}/registrar/registrations`、`PATCH …/{domain}` | 到期时间、自动续费、锁定。Beta，还没有续费接口 |
+| Web Analytics | 域名 · Analytics & logs | `/accounts/{id}/rum/site_info/list` + GraphQL | 免费用户常用的访客统计 |
+| AI 爬虫管控 / Bot | 域名 · AI Crawl Control、Security · Settings | `GET/PUT /zones/{id}/bot_management`、`GET /zones/{id}/ai-audit/robots` | 2025–2026 年站长很关心的功能 |
+| Turnstile | Application security · Turnstile | `/accounts/{id}/challenges/widgets`、`…/rotate_secret` | 查看组件、轮换密钥 |
+| 健康检查 / 负载均衡 / 等候室 | 域名 · Traffic | `/zones/{id}/healthchecks`、Load Balancers pools health、`/zones/{id}/waiting_rooms` | 只对有这些功能的用户显示 |
+| 泄露凭证检测 | Security · Settings | `GET/POST /zones/{id}/leaked-credential-checks` | 开关 |
+
+### 7.3 P2：之后再看
+
+| 功能 | 接口 | 说明 |
+|---|---|---|
+| Flagship 功能开关 | `/accounts/{id}/flagship/apps`、`…/flags`、`…/flags/{key}/changelog` | 在手机上切换功能开关很有价值。⚠️ 产品成熟度未确认 |
+| 资源标签 | `/accounts/{id}/tags`、`…/tags/resources` | 按标签给域名分组、筛选 |
+| 版本管理 | `/zones/{id}/environments`、`…/rollback` | Dashboard 的 Version Management，企业版为主 |
+| AI Gateway、Containers、Durable Objects、Secrets Store | 各自接口 | 先做只读列表 |
+| 账单用量 | Billing usage | Alpha，等稳定 |
+
+### 7.4 只做「在 Dashboard 中打开」
+
+Zero Trust 策略、Networking（Tunnel 以外）、Media（Stream、Images、Realtime）、Web tag management / Zaraz、Spectrum、Logpush 配置、Snippets、Speed、Custom Hostnames、Page Shield 等。做法：
+
+- 每个页面工具栏放「在 Dashboard 中打开」，用 Dashboard 深链接跳到对应页面。
+- 在「更多」里放一个「全部功能」目录，按 Dashboard 分组列出所有页面，点开直接跳网页。路由表来自官方文档仓库，可以在构建时生成。
+
+---
+
+## 8. 系统集成（无后端前提下）
 
 | 能力 | 用途 | 方案 | 优先级 |
 |---|---|---|---|
-| 深链 | `cfpanel://zone/{id}/dns` 等 | 小组件、快捷指令、通知跳转都依赖它；随路由重构一起做 | 高（基础） |
-| App Intents + 快捷指令 | 查看站点状态、清除缓存、开关 Under Attack | 在 app 进程内执行（不共享 Keychain）；改线上配置的操作要求设备已解锁并确认 | 高 |
-| 控制中心控件 | 一键开关某个站点的 Under Attack | 需要共享 Keychain，做成可选开启 | 中 |
-| 小组件 | 站点状态、今日流量 | 需要共享 Keychain，可选开启；组件快照会被系统缓存，要在隐私说明里写清楚 | 中 |
-| Live Activity | Under Attack 开启计时、部署进行中 | 只在本地更新，并设置过期时间 | 低 |
-| Spotlight 索引 | 搜索站点名 | 会把站点名持久化到系统索引，和「业务数据只放内存」冲突，不做或做成明确可选 | 低 |
+| 深链接 | `cfpanel://zone/{id}/dns` 等 | 小组件、快捷指令、搜索命令都依赖它；随路由重构一起做 | 高 |
+| App Intents + 快捷指令 | 查看站点状态、清除缓存、开关 Under Attack | 在 app 进程内执行（不共享 Keychain）；改线上配置要求设备已解锁并确认 | 高 |
+| 控制中心控件 | 一键开关某个站点的 Under Attack | 需要扩展共享 Keychain，做成用户可选开启 | 中 |
+| 小组件 | 星标域名状态、今日流量 | 同上；组件快照会被系统缓存，要在隐私说明里写清 | 中 |
+| Live Activity | Under Attack 计时、开发模式剩余时间、构建进行中 | 只在本地更新，设置过期时间 | 低 |
+| Spotlight | 搜索域名 | 会把域名持久化到系统索引，和「业务数据只放内存」冲突；不做，或做成明确可选 | 低 |
+
+推送类告警不做；在告警页引导用户把 Cloudflare 告警投递到邮件、Webhook 或 PagerDuty。
 
 ---
 
-## 8. 工程改造
+## 9. 工程改造
 
-- **最低系统版本 17 → 26**：截至 2026 年 6 月，79% 的 iPhone、近四年机型中 86% 已在 iOS 26。升级后 Liquid Glass、tab 底部附件、工具栏间隔、搜索 tab 都不用写兼容分支，只有 iOS 27 新 API 需要 `#available`。
-- **路由**：全局 `Route` 枚举加一个路由器，支持深链和跨 tab 跳转；统一使用基于值的 `NavigationLink`。
-- **依赖注入**：41 个 `.environment` 合并成少量按功能分组的环境对象，或由 `AppContainer` 集中提供，避免漏注入导致崩溃。
-- **测试**：
-  1. 每个接口模型用真实响应 JSON 做解析测试（这次 `foundation_dns` 就是这类问题）。
-  2. view model 用 `URLProtocol` 桩做请求测试。
-  3. 关键路径 UI 测试（可选）。
-- **CI**：GitHub Actions 编译加测试（`CODE_SIGNING_ALLOWED=NO` 已验证能编译）。
-- **容错解析**：枚举遇到未知值降级为 unknown；非关键字段一律可选，Cloudflare 改字段时页面不至于直接加载失败。
-- **限流**：传输层读取 `Ratelimit` / `Retry-After` 响应头做退避；控制一次刷新的并发请求数。
-- **支持用户级 API Token**：目前只支持账号 Token。Workers 构建接口只接受用户级 Token，dev.md 里也承诺过这一项。
-- **跟踪 API 变更**：每月对照一次 Cloudflare 废弃公告；⚠️ 可以评估用 Cloudflare 官方 OpenAPI 描述写一个接口对照脚本。
-- **清理**：删死代码；拆大文件（`AuthenticationView` 961 行；`SettingsView` 657 行，里面混着站点设置页面）。
-- **文档**：让 `Architecture.md`、`dev.md`、`.github/copilot-instructions.md` 和代码保持一致。
-- **本地化**：用字符串拼出来的提示消息改成可本地化的写法。
+- **最低系统版本 17 → 26**（截至 2026-06，79% 的 iPhone 在 iOS 26）。
+- **路由重构**：全局 `Route` + 路由器，同一套路由同时驱动 iPhone tab 和 iPad 侧边栏；支持 app 深链和 Dashboard 深链映射。
+- **依赖注入**：41 个 `.environment` 合并为少量按功能分组的环境对象。
+- **测试**：接口模型用真实响应 JSON 做解析测试；view model 用 `URLProtocol` 桩测试。
+- **CI**：GitHub Actions 编译 + 测试。
+- **接口对照脚本**：把这次的抓取和比对做成脚本，定期运行，检查 app 调用的路径是否还在官方文档里（本次就发现了 Email Sending 的旧路径）。
+- **容错解析**：枚举遇到未知值降级；非关键字段可选。
+- **限流**：读取 `Ratelimit` / `Retry-After` 头退避；控制并发。
+- **支持用户级 API Token**：Workers 构建接口需要，dev.md 也承诺过。
+- **迁移 Email Sending 路径**到 `/zones/{id}/email/sending/subdomains`。
+- **清理**：删死代码、拆大文件、更新过时文档（`copilot-instructions.md` 等）。
 
 ---
 
-## 9. 分阶段路线
+## 10. 路线图
 
 | 版本 | 主题 | 内容 | 规模 |
 |---|---|---|---|
-| **1.1.1** | 紧急修复 | API 兼容（已完成，分支 `fix/cloudflare-api-compat`）；错误提示被吞；Pages/Workers 只显示前 3 个；暂停站点加确认；去掉失效的安全级别选择器；审计日志默认隐藏 `view`；改版本号。**另外请确认 OAuth 客户端已公开** | 小 |
-| **1.2** | 地基 | 最低版本升到 iOS 26；测试 target + CI；容错解析；限流退避；路由与依赖注入重构；深色模式修复；30D 分析对所有套餐开放；清理死代码和文档；核实 OAuth refresh token；导出一份 `/oauth/scopes` 清单 | 中 |
-| **2.0** | 新界面 | 新 tab 结构、站点主页、全局搜索；多账号；统一操作分级、提示条、撤销；Liquid Glass 视觉；新登录页（可选 scope）+ 权限清单；概览页重做 | 大 |
-| **2.1** | 补齐运维能力 | 软清除缓存；账号级「仅 DNS」紧急开关；Worker 回滚；WAF/安全事件；安全洞察；IP 访问规则；常用规则模板；DNS 设置可编辑；邮件路由规则编辑；KV 前缀搜索；审计日志分页和资源历史；Queues 积压、D1 恢复、R2 对象浏览 | 中到大 |
-| **2.2** | 新产品 | Tunnel 状态；告警中心；Worker 错误与日志；Workers 构建（需要用户级 Token）；Workflows；域名注册（beta）；紧急轮换 Token/Secrets | 中到大 |
-| **2.3** | 系统集成 | 快捷指令；控制中心 Under Attack 开关；小组件（可选开启）；Live Activity | 中 |
-
-为什么是这个顺序：
-- 1.2 先做，因为 2.0 要大改导航，没有测试和路由基础，回归风险高。
-- 2.0 的新导航决定了 2.1、2.2 的新功能放在哪里，所以新功能排在它后面。
+| **1.1.1** | 紧急修复 | 已完成 6 项（见 1.1）；剩余：暂停站点确认、深色模式登录页、版本号、确认 OAuth 客户端已公开 | 小 |
+| **1.2** | 地基 | iOS 26；测试 + CI；接口对照脚本；容错解析；限流；路由与依赖注入重构；迁移 Email Sending 路径；用户级 Token；核实 OAuth refresh token；导出 `/oauth/scopes` 清单 | 中 |
+| **2.0** | 对齐 Dashboard 的新界面 | 新导航（iPhone 4 tab + 搜索、iPad 侧边栏）；首页（星标、应急状态、告警、最近访问）；域名主页和概览快捷操作；安全概览；DNS 记录新交互；快速搜索与命令；「在 Dashboard 中打开」与全部功能目录；多账号；确认分级与提示条；Liquid Glass 视觉；新登录页 + 权限清单 | 大 |
+| **2.1** | 应急工具箱 | 7.1 全部：Zone Hold、软清除、IP 访问规则、IP 列表、仅 DNS 开关、告警静音、证书状态、DNSSEC、DNS 批量、成员与 Token 管理 | 中 |
+| **2.2** | 开发者平台 | 7.2：Worker 日志 / 实时日志 / 问题 / 回滚 / Secrets / 构建、Workflows、Tunnels、Queues、D1、R2 对象、域名注册、Web Analytics、AI 爬虫管控、Turnstile | 大 |
+| **2.3** | 系统集成 | 快捷指令；控制中心 Under Attack；小组件（可选开启）；Live Activity | 中 |
+| 之后 | P2 | Flagship、资源标签、版本管理等 | — |
 
 ---
 
-## 10. 需要你拍板的决策
+## 11. 需要你拍板的决策
 
 | # | 问题 | 建议 |
 |---|---|---|
-| 1 | 最低版本升到 iOS 26？ | 是 |
-| 2 | 多账号、多凭证？ | 2.0 先做「一个凭证多个账号」，多凭证随后 |
-| 3 | 小组件和控制中心是否允许扩展共享 Keychain？ | 先只做 app 内执行的快捷指令；扩展做成用户可选开启 |
-| 4 | 保留 3 秒倒计时吗？ | 改成设置项，默认关闭；确认框保留 |
-| 5 | 规则编辑做到什么程度？ | 开关 + 常用模板（封 IP/国家、限速），不做表达式编辑器 |
-| 6 | 8 种语言都保留吗？ | 文案大改后要整体重译，需要评估翻译方式 |
-| 7 | 2.0 一次性发布还是逐步替换？ | 一次性作为大版本发布，1.2 期间可以先发 TestFlight |
-| 8 | 支持用户级 API Token 吗？ | 支持。Workers 构建接口只接受它，dev.md 也承诺过 |
-| 9 | 账号级「仅 DNS」紧急开关要做吗？它影响账号下所有站点 | 做，但放在「高级危险模式」后面，确认框写明全部后果 |
+| 1 | 分组和命名是否全面对齐 Dashboard？ | 是。iPad 照搬侧边栏，iPhone 压缩为 4 tab |
+| 2 | 中文术语是否对齐 Dashboard 官方中文界面？ | 是，需要逐个对照收集 |
+| 3 | 最低版本升到 iOS 26？ | 是 |
+| 4 | 多账号、多凭证？ | 2.0 先做「一个凭证多个账号」，多凭证随后 |
+| 5 | 高风险操作比网页多一层确认？ | 是；3 秒倒计时改为可选设置，默认关闭 |
+| 6 | 账号级「仅 DNS」开关要做吗？ | 做，放在高级危险模式后面 |
+| 7 | 支持用户级 API Token？ | 支持 |
+| 8 | 小组件和控制中心是否允许扩展共享 Keychain？ | 先做 app 内执行的快捷指令；扩展做成可选开启 |
+| 9 | Flagship 等新产品是否纳入？ | 先观察，等产品稳定 |
+| 10 | 2.0 一次性发布还是逐步替换？ | 一次性大版本；1.2 期间先发 TestFlight |
 
 ---
 
-## 11. 风险
+## 12. 风险
 
+- **Dashboard 还在变**：2026 年改过好几次导航。对策是只对齐稳定的大分组和叫法，细节以 changelog 为准，并定期复查。
 - **导航大改带来回归**：1.2 先补测试和路由。
-- **翻译成本**：文案定稿后再统一翻译，避免反复。
-- **OAuth scope 不确定**：每个新功能开工前先用 `/client/v4/oauth/scopes` 核对。
-- **Beta 接口变动**：新产品先做只读。
-- **App 审核**：新功能需要更新给审核用的演示 token 权限。
+- **OAuth scope 不确定**：所有新功能开工前先用 `GET /client/v4/oauth/scopes` 核对；没有 scope 的功能只在 Token 模式提供。
+- **Beta 接口变动**：Registrar、SQL 分析、Flagship 等先做只读。
+- **翻译成本**：文案定稿后统一翻译。
+- **App 审核**：新功能需要同步更新审核用演示 Token 的权限。
 
 ---
 
-## 附录：依据
+## 附录 A：接口覆盖对照（63 个相关分组）
 
-**代码与实测**
-- 代码盘点：导航、功能、交互、视觉、工程（文中 `文件:行号` 均指 `CFPanel/` 目录）。
-- 模拟器实测（iPhone 18 Pro，iOS 27 SDK）：登录页浅色正常，深色模式背景不变、文字变白。
-- App Store 数据：1.1.0，2026-07-02 发布，1 条评价。
+数字为「该分组接口总数 / CFPanel 已覆盖（含同一路径的其他方法）」。
 
-**Cloudflare**
+| 分组 | 接口数 | 已覆盖 | | 分组 | 接口数 | 已覆盖 |
+|---|---|---|---|---|---|---|
+| Workers | 89 | 25 | | Alerting | 22 | 0 |
+| Pages | 24 | 18 | | Firewall（IP 访问规则等） | 15 | 0 |
+| DNS | 59 | 13 | | Rules Lists | 11 | 0 |
+| Email Routing | 19 | 13 | | SSL | 15 | 0 |
+| KV | 13 | 12 | | Security Center | 9 | 0 |
+| Rulesets | 15 | 8 | | IAM | 31 | 0 |
+| Zones | 42 | 7 | | Zero Trust（只算 Tunnel 等） | 113 | 0 |
+| D1 | 13 | 6 | | Workers Builds | 28 | 0 |
+| Hyperdrive | 7 | 6 | | Workflows | 14 | 0 |
+| Queues | 25 | 6 | | Registrar | 13 | 0 |
+| R2 | 46 | 5 | | RUM（Web Analytics） | 10 | 0 |
+| Vectorize | 14 | 5 | | Bot Management | 4 | 0 |
+| Accounts | 46 | 2 | | Turnstile | 6 | 0 |
+| Cache | 24 | 1 | | Load Balancers | 35 | 0 |
+| Email Sending | 14 | 0（使用旧路径） | | Waiting Rooms | 23 | 0 |
+
+其余未覆盖的相关分组：AI Audit、AI Gateway、Abuse Reports、Argo、Audit Logs（v1）、Billing、Containers、Custom Certificates、Custom Hostnames、Custom Pages、DDoS Protection、Durable Objects、Email Auth、Flagship、Healthchecks、Images、Leaked Credential Checks、Logpush、Logs、Memberships、Organizations、Origin CA Certificates、Page Rules、Page Shield、Pipelines、Resource Tagging、Secrets Store、Smart Shield、Snippets、Speed、Stream、User、Zaraz。
+
+不在分析范围内的 65 个分组：Radar、Magic Transit、Network Interconnects、Addressing、Brand Protection、Intel、Cloudforce One、Realtime Kit、Calls、Browser Rendering、Workers AI 等骨干网、企业安全情报和媒体实时类产品。
+
+## 附录 B：依据
+
+**官方 API**
+- [API 文档首页](https://developers.cloudflare.com/api/) 与 [llms.txt 索引](https://developers.cloudflare.com/api/llms.txt)
 - [API 废弃公告](https://developers.cloudflare.com/fundamentals/api/reference/deprecations/)
 - [Changelog](https://developers.cloudflare.com/changelog/)
-- [创建 OAuth 客户端（默认私有、公开验证）](https://developers.cloudflare.com/fundamentals/oauth/create-an-oauth-client/)
-- [OAuth 可选 scope](https://developers.cloudflare.com/changelog/post/2026-08-20-oauth-optional-scopes/)
-- [OAuth scope 列表接口](https://developers.cloudflare.com/api/resources/iam/subresources/oauth_scopes)
-- [安全级别](https://developers.cloudflare.com/waf/tools/security-level/)
-- [审计日志 changelog](https://developers.cloudflare.com/changelog/product/audit-logs/)
-- [软清除缓存](https://developers.cloudflare.com/changelog/post/2026-09-28-cache-invalidation/)
-- [仅 DNS 紧急开关](https://developers.cloudflare.com/dns/proxy-status/enforce-dns-only/)
-- [所有套餐 30 天分析](https://developers.cloudflare.com/changelog/post/2026-10-02-30-days-analytics-on-every-plan/)
-- [SQL 分析接口](https://developers.cloudflare.com/analytics/sql-api/)
-- [Workers Observability 查询](https://developers.cloudflare.com/api/resources/workers/subresources/observability/subresources/telemetry/methods/query/)
-- [Workers 构建 API](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/)
-- [Workflows API](https://developers.cloudflare.com/api/resources/workflows/)
-- [Alerting API](https://developers.cloudflare.com/api/resources/alerting/)
-- [Tunnel API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/)
-- [Registrar API](https://developers.cloudflare.com/api/resources/registrar/)
-- [Security Center](https://developers.cloudflare.com/api/resources/security_center/)
-- [403 附带文档链接](https://developers.cloudflare.com/changelog/post/2026-08-20-contextual-403s/)
-- [API 限流](https://developers.cloudflare.com/fundamentals/api/reference/limits/)
-- [从 Pages 迁移到 Workers](https://developers.cloudflare.com/workers/static-assets/migration-guides/migrate-from-pages/)
+
+**官方 Dashboard**
+- [Dashboard 路由表（docs 仓库 dash-routes/core.json）](https://github.com/cloudflare/cloudflare-docs/blob/production/src/content/dash-routes/core.json)
+- [统一导航（2026-10）](https://developers.cloudflare.com/changelog/post/2026-10-12-unified-dashboard-navigation/)
+- [AI 分组（2026-02）](https://developers.cloudflare.com/changelog/post/2026-02-19-ai-dashboard-experience-improvements/)
+- [Networking 导航（2026-01）](https://developers.cloudflare.com/changelog/post/2026-01-15-networking-navigation-update/)
+- [Tunnel 移入主导航](https://developers.cloudflare.com/changelog/post/2026-02-20-tunnel-core-dashboard/)
+- [新安全概览](https://developers.cloudflare.com/changelog/post/2026-03-17-new-security-overview-ui/) · [安全概览文档](https://developers.cloudflare.com/security/overview/) · [Security rules](https://developers.cloudflare.com/security/rules/)
+- [新版 DNS 记录页](https://developers.cloudflare.com/changelog/post/2026-05-20-new-dns-records-ux/) · [旧版下线](https://developers.cloudflare.com/changelog/post/2026-10-30-classic-dns-records-page-retired/)
+- [Worker 概览页](https://developers.cloudflare.com/changelog/post/2025-10-06-new-worker-overview-page/) · [指标图标注发布](https://developers.cloudflare.com/changelog/post/2026-09-25-release-flows-workers-metrics/)
+- [R2 Dashboard 更新](https://developers.cloudflare.com/changelog/post/2025-05-01-r2-dashboard-updates/)
+- [Account home 更新](https://developers.cloudflare.com/changelog/post/2025-03-26-account-home-updates/) · [星标域名](https://developers.cloudflare.com/fundamentals/manage-domains/star-zones/)
+- [键盘快捷键](https://developers.cloudflare.com/changelog/post/2026-05-04-keyboard-shortcuts/)
+- [Under Attack](https://developers.cloudflare.com/fundamentals/reference/under-attack-mode/) · [暂停 Cloudflare](https://developers.cloudflare.com/fundamentals/manage-domains/pause-cloudflare/) · [Zone Hold](https://developers.cloudflare.com/fundamentals/account/account-security/zone-holds/)
+- [清除全部缓存](https://developers.cloudflare.com/cache/how-to/purge-cache/purge-everything/) · [软清除](https://developers.cloudflare.com/changelog/post/2026-09-28-cache-invalidation/)
+- [告警](https://developers.cloudflare.com/notifications/get-started/)
+- [Agent Lee](https://developers.cloudflare.com/agent-lee/)
 
 **Apple**
-- WWDC25：323 Build a SwiftUI app with the new design；275 App Intents；278 Widgets。
-- WWDC26：269 What's new in SwiftUI；278 Modernize your UIKit app；223 Live Activities。
-- [iOS 版本占比](https://developer.apple.com/support/app-store/)（2026-06-07：79% 的 iPhone 在 iOS 26）
-- iOS 27.1 SDK 接口文件（API 名称和可用版本以此为准）。
+- WWDC25：323、275、278；WWDC26：269、278、223
+- [iOS 版本占比](https://developer.apple.com/support/app-store/)
+- iOS 27.1 SDK 接口文件
 
 **仍需核实**
-- CFPanel 的 OAuth 客户端是否已公开。
-- 不申请 `offline_access` 时是否会下发 refresh token。
-- 所有新功能对应的 OAuth scope ID，包括 Hyperdrive。
-- Workers 构建接口是否接受 OAuth token；Observability 查询的权限要求。
-- `invalidate_cache` 的权限名和套餐限制。
+- CFPanel 的 OAuth 客户端是否已公开；不申请 `offline_access` 是否下发 refresh token。
+- 所有新功能对应的 OAuth scope ID（含 Hyperdrive）。
+- 2026-10 之后 Dashboard 账号侧边栏的确切结构；Dashboard 官方中文用词。
+- Workers 构建是否接受 OAuth token；Observability 查询的权限要求。
+- `workers/workers` 新接口与 `workers/scripts` 的关系；Email Sending 旧路径何时下线。
+- Flagship 的产品状态。
