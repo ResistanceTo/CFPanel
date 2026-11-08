@@ -83,6 +83,10 @@ final class DNSRecordsViewModel {
         context.presentError(error)
     }
 
+    func presentLoadError(_ error: some Error) {
+        context.presentLoadError(error)
+    }
+
     func saveRecord(_ draft: DNSRecordDraft) async {
         guard let zoneID = selectedZoneID else { return }
 

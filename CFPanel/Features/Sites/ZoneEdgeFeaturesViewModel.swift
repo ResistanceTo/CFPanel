@@ -20,8 +20,8 @@ final class ZoneEdgeFeaturesViewModel {
         context.isLoaded(.edgeFeatures, for: zoneID)
     }
 
-    func presentError(_ error: some Error) {
-        context.presentError(error)
+    func presentLoadError(_ error: some Error) {
+        context.presentLoadError(error)
     }
 
     func refreshZoneAdvancedSettings(force: Bool = false) async throws {

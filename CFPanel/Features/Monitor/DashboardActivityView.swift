@@ -86,8 +86,8 @@ struct DashboardActivityView: View {
                     Text("Zone")
                 }
             }
-            if let count = page?.resultInfo?.count {
-                LabeledContent("Returned", value: count.formatted())
+            if let page {
+                LabeledContent("Returned", value: page.entries.count.formatted())
             }
             Text("This page loads account activity only when you open it. Tap a row for full details without making another list request.")
                 .font(.footnote)

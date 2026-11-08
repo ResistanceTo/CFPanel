@@ -8,6 +8,14 @@ enum DangerousOperationsSettings {
     static let advancedModeStorageKey = "advanced_dangerous_mode_enabled"
 }
 
+/// Thrown when the user dismisses the Face ID / passcode prompt. Keeps the system message so
+/// inline error text is unchanged, but lets the global alert treat it as a silent cancellation.
+nonisolated struct DangerousActionCancelled: LocalizedError {
+    let message: String
+
+    var errorDescription: String? { message }
+}
+
 enum DangerousActionAuthorizer {
     @MainActor
     static func authorize(reason: String) async throws {
@@ -26,6 +34,8 @@ enum DangerousActionAuthorizer {
 
         do {
             _ = try await context.evaluatePolicy(policy, localizedReason: reason)
+        } catch let error as LAError where [.userCancel, .appCancel, .systemCancel].contains(error.code) {
+            throw DangerousActionCancelled(message: error.localizedDescription)
         } catch {
             throw CloudflareAPIError.api(error.localizedDescription)
         }

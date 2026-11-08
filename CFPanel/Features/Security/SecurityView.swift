@@ -96,7 +96,6 @@ struct SecurityOverviewView: View {
             }
 
             securityStatusSection
-            securityLevelSection
         }
         .navigationTitle("Security Overview")
         .task(id: securityLevelViewModel.selectedZoneID) {
@@ -163,24 +162,6 @@ struct SecurityOverviewView: View {
         }
     }
 
-    private var securityLevelSection: some View {
-        Section("Security Level") {
-            Text(securityLevelViewModel.currentSecurityLevel.description)
-                .foregroundStyle(.secondary)
-
-            Picker("Security Level", selection: Binding.asyncValue(
-                get: { securityLevelViewModel.isUnderAttackModeEnabled ? securityLevelViewModel.lastNonAttackSecurityLevel : securityLevelViewModel.currentSecurityLevel },
-                set: { level in await securityLevelViewModel.updateSecurityLevel(level) }
-            )) {
-                ForEach(SecurityLevel.allCases.filter { $0 != .underAttack }) { level in
-                    Text(level.title).tag(level)
-                }
-            }
-            .pickerStyle(.segmented)
-            .disabled(securityLevelViewModel.isUnderAttackModeEnabled || securityLevelViewModel.isRefreshingZoneControls || securityLevelViewModel.selectedZoneID == nil)
-        }
-    }
-
     private var isShowingUnderAttackConfirmation: Binding<Bool> {
         Binding(
             get: { pendingUnderAttackMode != nil },
@@ -210,18 +191,18 @@ struct SecurityOverviewView: View {
         let zoneName = securityLevelViewModel.selectedZone?.name ?? "this zone"
         if pendingUnderAttackMode == true {
             return DangerousOperationMessage.liveChange(
-                resource: "Security level",
+                resource: "Under Attack Mode",
                 name: zoneName,
-                from: String(localized: securityLevelViewModel.currentSecurityLevel.title),
-                to: String(localized: SecurityLevel.underAttack.title),
+                from: String(localized: "Disabled"),
+                to: String(localized: "Enabled"),
                 impact: "Cloudflare will immediately apply a more aggressive challenge flow. Real visitors may see additional checks."
             )
         }
         return DangerousOperationMessage.liveChange(
-            resource: "Security level",
+            resource: "Under Attack Mode",
             name: zoneName,
-            from: String(localized: SecurityLevel.underAttack.title),
-            to: String(localized: securityLevelViewModel.lastNonAttackSecurityLevel.title),
+            from: String(localized: "Enabled"),
+            to: String(localized: "Disabled"),
             impact: "Cloudflare will return the site to its normal security posture immediately."
         )
     }

@@ -3,7 +3,7 @@ import Observation
 import OSLog
 
 private func isSilentCancellationError(_ error: Error) -> Bool {
-    if error is CancellationError {
+    if error is CancellationError || error is DangerousActionCancelled {
         return true
     }
 
@@ -23,14 +23,26 @@ final class AppModel {
     var selectedTab: AppTab = .dashboard
     var alert: AppAlert?
     var unauthorizedSessionHandler: (() -> Void)?
-    var suppressInterruptingErrorAlerts = false
+    /// While signed in, failures from automatic screen loads are only logged, so opening a screen
+    /// the token can't read doesn't interrupt with an alert. Failures from user actions always alert.
+    var suppressLoadErrorAlerts = false
 
     @ObservationIgnored
     let logger = Logger(subsystem: "org.zhaohe.CFPanel", category: "AppModel")
     @ObservationIgnored
     let verboseLoggingEnabled = ProcessInfo.processInfo.environment["CFPANEL_VERBOSE_LOGGING"] == "1"
 
+    /// Failures from user actions such as save, toggle, purge, or delete. Always shown.
     func presentError(_ error: Error) {
+        presentError(error, isAutomaticLoad: false)
+    }
+
+    /// Failures from automatic screen loads and pull-to-refresh.
+    func presentLoadError(_ error: Error) {
+        presentError(error, isAutomaticLoad: true)
+    }
+
+    private func presentError(_ error: Error, isAutomaticLoad: Bool) {
         if isSilentCancellationError(error) {
             logDebug("Ignored cancelled request.")
             return
@@ -46,8 +58,8 @@ final class AppModel {
         }
 
         logError("Request failed: \(error.localizedDescription)")
-        if suppressInterruptingErrorAlerts {
-            logDebug("Suppressed interrupting in-app error alert.")
+        if isAutomaticLoad, suppressLoadErrorAlerts {
+            logDebug("Suppressed load error alert.")
             return
         }
         alert = AppAlert(
@@ -58,10 +70,6 @@ final class AppModel {
 
     func presentError(_ message: String) {
         logError("Request failed: \(message)")
-        if suppressInterruptingErrorAlerts {
-            logDebug("Suppressed interrupting in-app error alert.")
-            return
-        }
         alert = AppAlert(title: "Request Failed", message: message)
     }
 
